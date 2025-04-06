@@ -6,22 +6,31 @@
 
 **Cloud Kernel Manager (CKM)** is a hybrid cloud-native project that:
 
-- Simulates OS-level behavior (scheduling, memory, sync)
-- Orchestrates both simulated workloads and virtual machines
-- Provides Prometheus-style metrics for resource observability
-- Is modular, pluggable, and DevOps-ready
+CKM is designed to:
+-  Simulate core OS behaviors: scheduling, memory, synchronization
+-  Manage both lightweight tasks and full virtual machines
+-  Export Prometheus-compatible metrics for real-time observability
 
-## Features
+---
 
-| Component          | Description                                                    |
-|--------------------|----------------------------------------------------------------|
-| CPU Scheduling      | Pluggable strategies like FIFO, Round Robin, and Priority     |
-| Memory Management   | Simulated allocation, overcommit tracking, paging (planned)   |
-| Synchronization     | Mutex, semaphore simulation, deadlock detection               |
-| Workload Types      | Unified struct for both simulated tasks and VMs               |
-| Metrics             | Prometheus `/metrics` endpoint for real-time system stats     |
-| VM Integration      | Optional: QEMU or Firecracker backend                         |
-| YAML Configuration  | Workload and VM specs defined via config files                |
+## ✨ Features Overview
+
+| Component          | Description                                                          |
+|--------------------|----------------------------------------------------------------------|
+| **CPU Scheduling**   | Pluggable schedulers: FIFO, Round Robin, Fair, and Multilevel      |
+| **Dynamic Selection**| Scheduler auto-selects based on task mix (e.g., `.ipynb`, `.vm`)   |
+| **Memory Management**| Simulated allocation, tracking, paging support (planned)           |
+| **Synchronization** | Simulation of mutex, semaphores, and deadlock detection (planned)   | 
+| **Workload Modeling**| Unified struct for scripts, VMs, containers, notebooks             |
+| **Metrics Exporter**| Prometheus `/metrics` endpoint (e.g., memory, workload count)       |
+| **VM Integration**  | Optional: QEMU-based VM launcher (Firecracker support planned)      |
+| **YAML Configuration**| Task, VM, and resource definitions via YAML                       |
+| **Grafana Dashboard**| Optional dashboard via `grafana-dashboard.json`                    |
+
+---
+
+### Built for learners, operators, and anyone wanting to master the intersection of OS concepts and cloud infrastructure.
+
 
 ## Architecture and Design
 
