@@ -1,0 +1,48 @@
+{
+    "dashboard": {
+      "id": null,
+      "title": "CKM Metrics Dashboard",
+      "timezone": "browser",
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Running Workloads",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "ckm_workloads_running_total",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 }
+        },
+        {
+          "type": "stat",
+          "title": "Memory Usage (MB)",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "ckm_memory_usage_megabytes",
+              "refId": "B"
+            }
+          ],
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 }
+        },
+        {
+          "type": "graph",
+          "title": "Completed Workloads by Type",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "ckm_workloads_completed_total",
+              "refId": "C"
+            }
+          ],
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 }
+        }
+      ],
+      "schemaVersion": 36,
+      "version": 1
+    }
+  }
+  

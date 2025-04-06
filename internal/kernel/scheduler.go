@@ -2,53 +2,87 @@ package kernel
 
 import (
 	"fmt"
+	"path/filepath"
+	"sync"
 	"time"
+
+	"ckm/internal/common"
 )
 
-// Workload represents both tasks and VMs.
+// Workload is the core unit handled by all schedulers.
 type Workload struct {
-    ID        string
-    Type      string // "task" or "vm"
-    CPUTime   time.Duration
-    MemoryMB  int
-    Status    string // "waiting", "running", "done"
+	ID       string        // Unique workload name (e.g., "task-001")
+	PID      int           // Unique process identifier
+	Type     string        // "task", "vm", or future "container"
+	CPUTime  time.Duration // Time the task is expected to run
+	MemoryMB int           // Memory requested
+	Status   string        // "waiting", "running", "done"
+	Priority int           // For priority schedulers
+	FilePath string        // Optional: source script (e.g., .ipynb, .py)
 }
 
-// An interface for pluggable scheduling algorithms.
+// Scheduler is the interface implemented by all strategies (FIFO, RR, etc.)
 type Scheduler interface {
-    Add(Workload)
-    Run()
+	Add(Workload)
+	Run()
 }
 
-// FIFOScheduler is a basic First-In-First-Out scheduler.
-type FIFOScheduler struct {
-    queue []Workload
+// --- PID Generation (Thread-Safe) ---
+
+var (
+	pidCounter = 1000
+	pidMutex   sync.Mutex
+)
+
+// NextPID returns a globally unique process ID (like a real OS)
+func NextPID() int {
+	pidMutex.Lock()
+	defer pidMutex.Unlock()
+	pidCounter++
+	return pidCounter
+
 }
 
-// NewFIFOScheduler creates a new FIFO scheduler.
-func NewFIFOScheduler() *FIFOScheduler {
-    return &FIFOScheduler{
-        queue: []Workload{},
-    }
+// ClassifyWorkload assigns a type and priority based on file extension
+func ClassifyWorkload(file string) (string, int) {
+	ext := filepath.Ext(file)
+
+	switch ext {
+	case ".ipynb":
+		return "notebook", 0 // highest priority, needs responsiveness
+	case ".py", ".sh":
+		return "task", 1 // medium priority
+	case ".iso", ".qcow2":
+		return "vm", 2 // lowest priority
+	default:
+		return "task", 2 // fallback
+	}
 }
 
-// Add appends a workload to the FIFO queue.
-func (s *FIFOScheduler) Add(w Workload) {
-    fmt.Println("[+] Queued:", w.ID)
-    w.Status = "waiting"
-    s.queue = append(s.queue, w)
-}
+	// ChooseScheduler selects the best scheduler based on workload type distribution
+func ChooseScheduler(raws []common.RawWorkload) Scheduler {
+	typeCounts := map[string]int{}
 
-// Run processes each workload in arrival order.
-func (s *FIFOScheduler) Run() {
-    for len(s.queue) > 0 {
-        w := s.queue[0]
-        s.queue = s.queue[1:]
+	for _, raw := range raws {
+		typ, _ := ClassifyWorkload(raw.FilePath)
+		typeCounts[typ]++
+	}
 
-        fmt.Printf("[>] Running %s (%s) for %v\n", w.ID, w.Type, w.CPUTime)
-        w.Status = "running"
-        time.Sleep(w.CPUTime) // Simulate CPU work
-        w.Status = "done"
-        fmt.Printf("[✔] Completed %s\n", w.ID)
-    }
+	fmt.Println("[INFO] Workload types detected:", typeCounts)
+
+	switch {
+	case typeCounts["notebook"] > typeCounts["vm"] && typeCounts["notebook"] > 0:
+		fmt.Println("[CKM] Using Fair Scheduler for notebook-heavy workload")
+		return NewFairScheduler(1 * time.Second)
+
+	case typeCounts["vm"] > typeCounts["task"] && typeCounts["vm"] > 0:
+		fmt.Println("[CKM] Using Round Robin Scheduler for VM-heavy workload")
+		return NewRoundRobinScheduler(1 * time.Second)
+
+	default:
+		fmt.Println("[CKM] Using Multilevel Scheduler for mixed workload")
+		vmSched := NewRoundRobinScheduler(1 * time.Second)
+		taskSched := NewPriorityScheduler()
+		return NewMultilevelScheduler(vmSched, taskSched)
+	}
 }

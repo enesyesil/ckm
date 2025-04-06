@@ -1,0 +1,14 @@
+- id: "nb-001"
+  cpu_time: "4s"
+  memory_mb: 512
+  file_path: "jobs/analysis.ipynb"
+
+- id: "task-001"
+  cpu_time: "2s"
+  memory_mb: 256
+  file_path: "jobs/train.py"
+
+- id: "vm-001"
+  cpu_time: "6s"
+  memory_mb: 1024
+  file_path: "images/ubuntu.iso"
