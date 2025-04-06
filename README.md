@@ -13,7 +13,7 @@ CKM is designed to:
 
 ---
 
-## ✨ Features Overview
+## Features Overview
 
 | Component          | Description                                                          |
 |--------------------|----------------------------------------------------------------------|
