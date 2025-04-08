@@ -1,5 +1,5 @@
 # ☁️ CKM: Cloud Kernel Manager
-![Project Status: Planning](https://img.shields.io/badge/status-In#Progress-green)
+![Project Status: Planning](https://img.shields.io/badge/status-Building...-green)
 
 > A modular kernel simulation framework for managing both simulated processes and virtual machines using real OS principles — with full DevOps-style observability.
 >
