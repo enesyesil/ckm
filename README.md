@@ -9,6 +9,8 @@
 
 A workload orchestration system I built to understand how kernel scheduling, memory management, and production infrastructure come together in real-world systems.
 
+**Tech Stack:** Go 1.24+ | Docker SDK | Gorilla Mux | Prometheus | Zap Logging | Grafana
+
 ---
 
 ## Background
@@ -44,9 +46,9 @@ I implemented all of these and connected them to metrics so I could actually *se
 
 Before this project, I thought metrics were just "nice to have." Now I understand they're essential for understanding what's happening inside a system:
 
-- `workload_duration_seconds` tells me if jobs are taking longer than expected
-- `scheduler_queue_length` shows backpressure before it becomes a problem
-- `container_startup_time` helps identify infrastructure issues
+- `ckm_workload_duration_seconds` tells me if jobs are taking longer than expected
+- `ckm_scheduler_queue_length` shows backpressure before it becomes a problem
+- `ckm_container_startup_time_seconds` helps identify infrastructure issues
 
 These aren't random numbers. Each metric answers a specific question about system behavior.
 
@@ -80,8 +82,8 @@ flowchart TD
         schedDesc["FIFO / RR / Fair / Priority / Multi"]
     end
 
-    subgraph Memory[Memory Manager]
-        memDesc["Allocation"]
+    subgraph Memory[CGroup Manager]
+        memDesc["Memory Allocation"]
     end
 
     Schedulers --> Executor
@@ -112,7 +114,7 @@ flowchart TD
 | **REST API** | CRUD for workloads | Real systems need APIs, not just CLI |
 | **Docker Runtime** | Executes actual containers | Moves beyond simulation to real workloads |
 | **Schedulers** | 5 different algorithms | Different workloads need different strategies |
-| **Memory Manager** | Tracks allocation | Prevents OOM and resource starvation |
+| **CGroup Manager** | Tracks memory allocation with cgroup-like limits | Prevents OOM and resource starvation |
 | **Process Management** | Groups, sessions, parent-child | Mirrors how Linux actually manages processes |
 | **cgroups-like Limits** | CPU/memory constraints | Same concepts Docker uses internally |
 | **Circuit Breaker** | Stops cascading failures | Essential for distributed systems |
@@ -214,6 +216,8 @@ curl http://localhost:8080/api/v1/health
 
 I set up Grafana dashboards that show these in real-time. It's genuinely useful for understanding system behavior.
 
+See the **Container Discovery** section below for per-container metrics like CPU, memory, and network I/O.
+
 ---
 
 ## Container Discovery: Monitor Any App
@@ -274,12 +278,13 @@ ckm/
 │   └── grafana-*.yml
 ├── internal/
 │   ├── api/                 # REST API
-│   ├── balancer/            # Load balancer
+│   ├── balancer/            # Load balancer (RR, least-conn, weighted)
 │   ├── common/              # Logging, metrics, rate limiter, circuit breaker
-│   ├── kernel/              # Schedulers, memory, processes, cgroups
-│   └── runtime/             # Docker integration
+│   ├── kernel/              # Schedulers, cgroups, processes, signals
+│   └── runtime/             # Docker integration, container discovery
 ├── Dockerfile
 ├── docker-compose.yml
+├── LICENSE                  # MIT License
 └── README.md
 ```
 
@@ -313,13 +318,21 @@ When something starts failing, stop hitting it. Three states:
 - **Open**: Service is down, fail fast
 - **Half-Open**: Try again after timeout
 
+Configuration: Opens after **5 consecutive failures**, resets after **30 seconds**.
+
 ### Rate Limiter
 
-Token bucket algorithm. Smooths out traffic spikes. Configurable rate and burst capacity.
+Token bucket algorithm. Smooths out traffic spikes. 
+
+Configuration: **100 requests/second** with a **burst capacity of 50**.
 
 ### Graceful Shutdown
 
 Catches SIGTERM/SIGINT, waits for running workloads, then shuts down cleanly. Important because containers can get killed at any time.
+
+### Worker Pool
+
+The executor uses a **worker pool of 10 concurrent containers** to prevent resource exhaustion and control parallelism.
 
 ---
 
