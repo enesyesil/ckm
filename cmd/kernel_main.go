@@ -1,61 +1,94 @@
 package main
 
 import (
+	"context"
+	"syscall"
+	"time"
+
+	"ckm/internal/api"
 	"ckm/internal/common"
 	"ckm/internal/kernel"
-	"fmt"
-	"time"
+	"ckm/internal/runtime"
+	"go.uber.org/zap"
 )
 
 func main() {
+	// Initialize structured logging
+	common.InitLogger()
+	logger := common.Logger
+	defer logger.Sync()
 
-	common.InitMetrics() // init the prometheus metrics
+	// Initialize Prometheus metrics
+	common.InitMetrics()
+	logger.Info("Metrics server started on :9090")
 
-    // Create a Round Robin Scheduler with 1-second quantum
-    scheduler := kernel.NewRoundRobinScheduler(1 * time.Second)
-    memory := kernel.NewMemoryManager(1024)
+	// Create components
+	cgroups := kernel.NewCGroupManager(1024) // 1024 MB total memory
+	store := kernel.NewWorkloadStore()
+	scheduler := kernel.NewRoundRobinScheduler(1 * time.Second)
 
-    rawWorkloads, err := common.LoadWorkloads("configs/workloads.yaml")
-    if err != nil {
-        fmt.Println("Failed to load config:", err)
-        return
-    }
+	// Initialize shared Docker client
+	dockerClient, err := runtime.NewDockerClient()
+	if err != nil {
+		logger.Fatal("Failed to initialize Docker client", zap.Error(err))
+	}
 
-    var accepted []kernel.Workload
+	// Initialize Docker runtime using shared client
+	dockerRuntime := runtime.NewDockerRuntime(dockerClient, logger)
 
-    for _, raw := range rawWorkloads {
-        wl := kernel.Workload{
-            ID:       raw.ID,
-            Type:     raw.Type,
-            CPUTime:  common.ParseCPUTime(raw.CPUTime),
-            MemoryMB: raw.MemoryMB,
-        }
+	// Create executor with worker pool (max 10 concurrent workloads)
+	executor := kernel.NewExecutor(dockerRuntime, store, logger, 10)
 
-        ok := memory.Allocate(wl.ID, wl.MemoryMB)
-        if ok {
-             // Update memory metric
-            common.MemoryUsed.Set(float64(memory.GetUsedMemory()))
+	// Start container discovery service using shared client (monitors ALL running containers)
+	discovery := runtime.NewContainerDiscovery(dockerClient, logger, 5*time.Second)
 
-            // Track running count
-            common.WorkloadsRunning.Inc()
+	// Create API server
+	server := api.NewServer(store, executor, scheduler, cgroups, logger)
 
+	// Setup graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-            scheduler.Add(wl)
-            accepted = append(accepted, wl)
-        }
-    }
+	sigHandler := kernel.NewSignalHandler()
+	sigHandler.RegisterHandler(syscall.SIGTERM, func() {
+		logger.Info("Received SIGTERM, shutting down gracefully...")
+		cancel()
+	})
+	sigHandler.RegisterHandler(syscall.SIGINT, func() {
+		logger.Info("Received SIGINT, shutting down gracefully...")
+		cancel()
+	})
+	sigHandler.Start(ctx)
 
-    scheduler.Run()
+	// Start container discovery in background
+	go discovery.Start(ctx)
+	logger.Info("Container discovery started (monitoring all Docker containers)")
 
-    for _, wl := range accepted {
+	// Start API server in goroutine
+	serverErr := make(chan error, 1)
+	go func() {
+		logger.Info("Starting API server on :8080")
+		if err := server.Start(":8080"); err != nil {
+			serverErr <- err
+		}
+	}()
 
-        memory.Free(wl.ID, wl.MemoryMB)
-
-	   // Update metrics
-	    common.WorkloadsRunning.Dec()
-		common.WorkloadCompleted.WithLabelValues(wl.Type).Inc()
-		common.MemoryUsed.Set(float64(memory.GetUsedMemory()))
-    }
-
-	fmt.Println("All workloads complete. Metrics available at http://localhost:9090/metrics")
+	// Wait for shutdown signal or server error
+	select {
+	case <-ctx.Done():
+		logger.Info("Shutting down...")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		
+		// Wait for running workloads
+		executor.Wait()
+		
+		// Shutdown API server
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Error shutting down server", zap.Error(err))
+		}
+		logger.Info("Shutdown complete")
+	case err := <-serverErr:
+		logger.Fatal("Server error", zap.Error(err))
+	}
 }

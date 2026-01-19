@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # CKM - Cloud Kernel Manager
+  ckm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ckm
+    ports:
+      - "8080:8080"   # API server
+      - "9090:9090"   # Prometheus metrics
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Access to Docker daemon
+      - ./configs:/app/configs:ro
+    environment:
+      - ENV=production
+    depends_on:
+      - prometheus
+    networks:
+      - ckm-network
+    restart: unless-stopped
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./deployments/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - ckm-network
+    restart: unless-stopped
+
+  # Grafana - Dashboards and visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./deployments/grafana-dash.json:/etc/grafana/provisioning/dashboards/ckm.json:ro
+      - ./deployments/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./deployments/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - ckm-network
+    restart: unless-stopped
+
+networks:
+  ckm-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
