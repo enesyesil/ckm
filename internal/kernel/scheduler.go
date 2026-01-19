@@ -9,16 +9,22 @@ import (
 	"ckm/internal/common"
 )
 
-// Workload is the core unit handled by all schedulers.
+// Workload is the core unit handled by all schedulers
 type Workload struct {
-	ID       string        // Unique workload name (e.g., "task-001")
-	PID      int           // Unique process identifier
-	Type     string        // "task", "vm", or future "container"
-	CPUTime  time.Duration // Time the task is expected to run
-	MemoryMB int           // Memory requested
-	Status   string        // "waiting", "running", "done"
-	Priority int           // For priority schedulers
-	FilePath string        // Optional: source script (e.g., .ipynb, .py)
+	ID          string        // Unique identifier
+	PID         int           // Process ID
+	Type        string        // "container", "task", "vm"
+	CPUTime     time.Duration // Expected execution time
+	MemoryMB    int           // Memory limit in MB
+	Status      string        // "waiting", "running", "done", "failed"
+	Priority    int           // Scheduling priority (lower = higher)
+	FilePath    string        // Source file path
+	Image       string        // Docker image name
+	Command     []string      // Container command
+	CreatedAt   time.Time     // Creation timestamp
+	StartedAt   time.Time     // Start timestamp
+	CompletedAt time.Time     // Completion timestamp
+	ContainerID string        // Docker container ID
 }
 
 // Scheduler is the interface implemented by all strategies (FIFO, RR, etc.)
@@ -40,7 +46,6 @@ func NextPID() int {
 	defer pidMutex.Unlock()
 	pidCounter++
 	return pidCounter
-
 }
 
 // ClassifyWorkload assigns a type and priority based on file extension
@@ -59,7 +64,7 @@ func ClassifyWorkload(file string) (string, int) {
 	}
 }
 
-	// ChooseScheduler selects the best scheduler based on workload type distribution
+// ChooseScheduler selects the best scheduler based on workload type distribution
 func ChooseScheduler(raws []common.RawWorkload) Scheduler {
 	typeCounts := map[string]int{}
 
