@@ -15,24 +15,26 @@ import (
 
 // Server provides REST API for workload management
 type Server struct {
-	router     *mux.Router
-	store      *kernel.WorkloadStore
-	executor   *kernel.Executor
-	scheduler  kernel.Scheduler
-	memory     *kernel.MemoryManager
-	logger     *zap.Logger
-	httpServer *http.Server
+	router      *mux.Router
+	store       *kernel.WorkloadStore
+	executor    *kernel.Executor
+	scheduler   kernel.Scheduler
+	cgroups     *kernel.CGroupManager
+	rateLimiter *common.RateLimiter
+	logger      *zap.Logger
+	httpServer  *http.Server
 }
 
 // NewServer creates a new API server
-func NewServer(store *kernel.WorkloadStore, executor *kernel.Executor, scheduler kernel.Scheduler, memory *kernel.MemoryManager, logger *zap.Logger) *Server {
+func NewServer(store *kernel.WorkloadStore, executor *kernel.Executor, scheduler kernel.Scheduler, cgroups *kernel.CGroupManager, logger *zap.Logger) *Server {
 	s := &Server{
-		router:    mux.NewRouter(),
-		store:     store,
-		executor:  executor,
-		scheduler: scheduler,
-		memory:    memory,
-		logger:    logger,
+		router:      mux.NewRouter(),
+		store:       store,
+		executor:    executor,
+		scheduler:   scheduler,
+		cgroups:     cgroups,
+		rateLimiter: common.NewRateLimiter(100, 50), // 100 req/sec, burst of 50
+		logger:      logger,
 	}
 	s.setupRoutes()
 	return s
@@ -41,11 +43,23 @@ func NewServer(store *kernel.WorkloadStore, executor *kernel.Executor, scheduler
 // setupRoutes configures API endpoints
 func (s *Server) setupRoutes() {
 	api := s.router.PathPrefix("/api/v1").Subrouter()
+	api.Use(s.rateLimitMiddleware)
 	api.HandleFunc("/workloads", s.createWorkload).Methods("POST")
 	api.HandleFunc("/workloads", s.listWorkloads).Methods("GET")
 	api.HandleFunc("/workloads/{id}", s.getWorkload).Methods("GET")
 	api.HandleFunc("/workloads/{id}", s.deleteWorkload).Methods("DELETE")
 	api.HandleFunc("/health", s.healthCheck).Methods("GET")
+}
+
+// rateLimitMiddleware applies rate limiting to all API requests
+func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.rateLimiter != nil && !s.rateLimiter.Allow() {
+			s.respondError(w, http.StatusTooManyRequests, "Rate limit exceeded")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // createWorkload handles POST /api/v1/workloads
@@ -68,8 +82,8 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		Status:   "waiting",
 	}
 
-	// Allocate memory
-	if !s.memory.Allocate(wl.ID, wl.MemoryMB) {
+	// Allocate memory via cgroups
+	if !s.cgroups.Allocate(wl.ID, wl.MemoryMB) {
 		s.respondError(w, http.StatusInsufficientStorage, "Not enough memory")
 		return
 	}
@@ -79,7 +93,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	s.scheduler.Add(*wl)
 
 	// Update metrics
-	common.MemoryUsed.Set(float64(s.memory.GetUsedMemory()))
+	common.MemoryUsed.Set(float64(s.cgroups.GetUsedMemory()))
 	common.SchedulerQueueLength.WithLabelValues("default").Inc()
 
 	// Execute asynchronously
@@ -122,9 +136,9 @@ func (s *Server) deleteWorkload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Free memory and delete
-	s.memory.Free(wl.ID, wl.MemoryMB)
+	s.cgroups.Free(wl.ID, wl.MemoryMB)
 	s.store.Delete(wl.ID)
-	common.MemoryUsed.Set(float64(s.memory.GetUsedMemory()))
+	common.MemoryUsed.Set(float64(s.cgroups.GetUsedMemory()))
 
 	s.respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

@@ -12,24 +12,26 @@ import (
 
 // Executor runs workloads using Docker runtime with worker pool
 type Executor struct {
-	runtime    *runtime.DockerRuntime
-	store      *WorkloadStore
-	logger     *zap.Logger
-	workerPool chan struct{} // Limits concurrent executions
-	wg         sync.WaitGroup
+	runtime        *runtime.DockerRuntime
+	store          *WorkloadStore
+	logger         *zap.Logger
+	workerPool     chan struct{} // Limits concurrent executions
+	circuitBreaker *common.CircuitBreaker
+	wg             sync.WaitGroup
 }
 
 // NewExecutor creates a new workload executor with worker pool
 func NewExecutor(dockerRuntime *runtime.DockerRuntime, store *WorkloadStore, logger *zap.Logger, maxWorkers int) *Executor {
 	return &Executor{
-		runtime:    dockerRuntime,
-		store:      store,
-		logger:     logger,
-		workerPool: make(chan struct{}, maxWorkers),
+		runtime:        dockerRuntime,
+		store:          store,
+		logger:         logger,
+		workerPool:     make(chan struct{}, maxWorkers),
+		circuitBreaker: common.NewCircuitBreaker(5, 30*time.Second), // Open after 5 failures, reset after 30s
 	}
 }
 
-// Execute runs a workload in a container
+// Execute runs a workload in a container with circuit breaker protection
 func (e *Executor) Execute(ctx context.Context, w *Workload) error {
 	// Acquire worker slot (limits concurrency)
 	e.workerPool <- struct{}{}
@@ -50,31 +52,50 @@ func (e *Executor) Execute(ctx context.Context, w *Workload) error {
 		common.WorkloadDurationSeconds.WithLabelValues(w.Type).Observe(duration.Seconds())
 	}()
 
-	// Create container with resource limits
-	containerID, err := e.runtime.CreateContainer(ctx, w.Image, w.Command, w.MemoryMB, int64(w.Priority*512))
+	// Use circuit breaker for Docker operations
+	var containerID string
+	err := e.circuitBreaker.Call(func() error {
+		var createErr error
+		containerID, createErr = e.runtime.CreateContainer(ctx, w.Image, w.Command, w.MemoryMB, int64(w.Priority*512))
+		return createErr
+	})
 	if err != nil {
 		e.store.Update(w.ID, "failed")
 		common.WorkloadFailuresTotal.WithLabelValues(w.Type, "create").Inc()
+		if err == common.ErrCircuitOpen {
+			e.logger.Warn("Circuit breaker open, Docker operations paused", zap.String("workload", w.ID))
+		}
+		common.WorkloadsRunning.Dec()
 		return err
 	}
 
 	w.ContainerID = containerID
 	e.store.Add(w)
 
-	// Track container startup time
+	// Track container startup time with circuit breaker
 	startupStart := time.Now()
-	if err := e.runtime.StartContainer(ctx, containerID); err != nil {
+	err = e.circuitBreaker.Call(func() error {
+		return e.runtime.StartContainer(ctx, containerID)
+	})
+	if err != nil {
 		e.store.Update(w.ID, "failed")
 		common.WorkloadFailuresTotal.WithLabelValues(w.Type, "start").Inc()
+		common.WorkloadsRunning.Dec()
 		return err
 	}
 	common.ContainerStartupTimeSeconds.Observe(time.Since(startupStart).Seconds())
 
 	// Wait for container completion
-	exitCode, err := e.runtime.WaitContainer(ctx, containerID)
+	var exitCode int64
+	err = e.circuitBreaker.Call(func() error {
+		var waitErr error
+		exitCode, waitErr = e.runtime.WaitContainer(ctx, containerID)
+		return waitErr
+	})
 	if err != nil {
 		e.store.Update(w.ID, "failed")
 		common.WorkloadFailuresTotal.WithLabelValues(w.Type, "wait").Inc()
+		common.WorkloadsRunning.Dec()
 		return err
 	}
 

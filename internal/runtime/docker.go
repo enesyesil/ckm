@@ -7,9 +7,15 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"go.uber.org/zap"
 )
+
+// NewDockerClient creates a shared Docker client
+func NewDockerClient() (*client.Client, error) {
+	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+}
 
 // DockerRuntime manages Docker container lifecycle
 type DockerRuntime struct {
@@ -17,23 +23,32 @@ type DockerRuntime struct {
 	logger *zap.Logger
 }
 
-// NewDockerRuntime creates a new Docker runtime client
-func NewDockerRuntime(logger *zap.Logger) (*DockerRuntime, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, err
-	}
-	return &DockerRuntime{client: cli, logger: logger}, nil
+// NewDockerRuntime creates a new Docker runtime using shared client
+func NewDockerRuntime(dockerClient *client.Client, logger *zap.Logger) *DockerRuntime {
+	return &DockerRuntime{client: dockerClient, logger: logger}
 }
 
 // CreateContainer creates a new container with resource limits (like cgroups)
-func (r *DockerRuntime) CreateContainer(ctx context.Context, image string, cmd []string, memoryMB int, cpuShares int64) (string, error) {
+func (r *DockerRuntime) CreateContainer(ctx context.Context, imageName string, cmd []string, memoryMB int, cpuShares int64) (string, error) {
 	// Convert MB to bytes for memory limit
 	memoryBytes := int64(memoryMB) * 1024 * 1024
-	
+
+	// Pull image if not present
+	_, _, err := r.client.ImageInspectWithRaw(ctx, imageName)
+	if err != nil {
+		r.logger.Info("Pulling image", zap.String("image", imageName))
+		reader, pullErr := r.client.ImagePull(ctx, imageName, image.PullOptions{})
+		if pullErr != nil {
+			return "", pullErr
+		}
+		defer reader.Close()
+		// Read to completion
+		io.Copy(io.Discard, reader)
+	}
+
 	// Container configuration
 	config := &container.Config{
-		Image: image,
+		Image: imageName,
 		Cmd:   cmd,
 	}
 
@@ -51,13 +66,13 @@ func (r *DockerRuntime) CreateContainer(ctx context.Context, image string, cmd [
 		return "", err
 	}
 
-	r.logger.Info("Container created", zap.String("id", resp.ID[:12]), zap.String("image", image))
+	r.logger.Info("Container created", zap.String("id", resp.ID[:12]), zap.String("image", imageName))
 	return resp.ID, nil
 }
 
 // StartContainer starts a container
 func (r *DockerRuntime) StartContainer(ctx context.Context, containerID string) error {
-	err := r.client.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	err := r.client.ContainerStart(ctx, containerID, container.StartOptions{})
 	if err != nil {
 		return err
 	}
@@ -67,7 +82,8 @@ func (r *DockerRuntime) StartContainer(ctx context.Context, containerID string) 
 
 // StopContainer stops a running container gracefully
 func (r *DockerRuntime) StopContainer(ctx context.Context, containerID string, timeout time.Duration) error {
-	err := r.client.ContainerStop(ctx, containerID, &timeout)
+	timeoutSecs := int(timeout.Seconds())
+	err := r.client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeoutSecs})
 	if err != nil {
 		return err
 	}
@@ -77,7 +93,7 @@ func (r *DockerRuntime) StopContainer(ctx context.Context, containerID string, t
 
 // RemoveContainer removes a container
 func (r *DockerRuntime) RemoveContainer(ctx context.Context, containerID string) error {
-	err := r.client.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{Force: true})
+	err := r.client.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
 	if err != nil {
 		return err
 	}
@@ -87,7 +103,7 @@ func (r *DockerRuntime) RemoveContainer(ctx context.Context, containerID string)
 
 // GetContainerLogs streams container logs
 func (r *DockerRuntime) GetContainerLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
-	options := types.ContainerLogsOptions{
+	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
@@ -107,6 +123,6 @@ func (r *DockerRuntime) WaitContainer(ctx context.Context, containerID string) (
 }
 
 // InspectContainer gets container status and details
-func (r *DockerRuntime) InspectContainer(ctx context.Context, containerID string) (*types.ContainerJSON, error) {
+func (r *DockerRuntime) InspectContainer(ctx context.Context, containerID string) (types.ContainerJSON, error) {
 	return r.client.ContainerInspect(ctx, containerID)
 }

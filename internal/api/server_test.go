@@ -16,14 +16,14 @@ import (
 func setupTestServer() *Server {
 	logger := zap.NewNop()
 	store := kernel.NewWorkloadStore()
-	memory := kernel.NewMemoryManager(1024)
+	cgroups := kernel.NewCGroupManager(1024)
 	scheduler := kernel.NewRoundRobinScheduler(time.Second)
 
 	// Create server without executor (for API testing only)
 	s := &Server{
 		store:     store,
 		scheduler: scheduler,
-		memory:    memory,
+		cgroups:   cgroups,
 		logger:    logger,
 	}
 	return s

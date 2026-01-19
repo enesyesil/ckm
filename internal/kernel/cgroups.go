@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -15,14 +16,18 @@ type CGroup struct {
 
 // CGroupManager manages cgroups and resource limits
 type CGroupManager struct {
-	cgroups map[string]*CGroup
-	mu      sync.RWMutex
+	cgroups  map[string]*CGroup
+	totalMB  int64 // Total system memory
+	usedMB   int64 // Total used memory across all cgroups
+	mu       sync.RWMutex
 }
 
-// NewCGroupManager creates a new cgroup manager
-func NewCGroupManager() *CGroupManager {
+// NewCGroupManager creates a new cgroup manager with total memory capacity
+func NewCGroupManager(totalMB int64) *CGroupManager {
 	return &CGroupManager{
 		cgroups: make(map[string]*CGroup),
+		totalMB: totalMB,
+		usedMB:  0,
 	}
 }
 
@@ -87,4 +92,45 @@ func (cgm *CGroupManager) GetCGroup(name string) (*CGroup, bool) {
 	defer cgm.mu.RUnlock()
 	cg, ok := cgm.cgroups[name]
 	return cg, ok
+}
+
+// Allocate allocates memory from the global pool (simple interface for workloads)
+func (cgm *CGroupManager) Allocate(id string, mb int) bool {
+	cgm.mu.Lock()
+	defer cgm.mu.Unlock()
+
+	if cgm.usedMB+int64(mb) > cgm.totalMB {
+		fmt.Printf("[MEM] Not enough memory for %s (%dMB needed, %dMB available)\n", id, mb, cgm.totalMB-cgm.usedMB)
+		return false
+	}
+
+	cgm.usedMB += int64(mb)
+	fmt.Printf("[MEM] Allocated %dMB to %s (used: %dMB / %dMB)\n", mb, id, cgm.usedMB, cgm.totalMB)
+	return true
+}
+
+// Free frees memory back to the global pool
+func (cgm *CGroupManager) Free(id string, mb int) {
+	cgm.mu.Lock()
+	defer cgm.mu.Unlock()
+
+	cgm.usedMB -= int64(mb)
+	if cgm.usedMB < 0 {
+		cgm.usedMB = 0
+	}
+	fmt.Printf("[MEM] Freed %dMB from %s (used: %dMB / %dMB)\n", mb, id, cgm.usedMB, cgm.totalMB)
+}
+
+// GetUsedMemory returns current total memory usage
+func (cgm *CGroupManager) GetUsedMemory() int {
+	cgm.mu.RLock()
+	defer cgm.mu.RUnlock()
+	return int(cgm.usedMB)
+}
+
+// GetTotalMemory returns total memory capacity
+func (cgm *CGroupManager) GetTotalMemory() int {
+	cgm.mu.RLock()
+	defer cgm.mu.RUnlock()
+	return int(cgm.totalMB)
 }

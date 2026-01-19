@@ -1,15 +1,62 @@
-# ☁️ CKM: Cloud Kernel Manager
+# CKM: Cloud Kernel Manager
 
-> A production-ready workload orchestration system demonstrating kernel concepts, OS internals, load balancing, and SRE practices — with real Docker container execution and comprehensive observability.
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C?style=flat&logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?style=flat&logo=grafana&logoColor=white)](https://grafana.com/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-44%20Passing-brightgreen?style=flat&logo=github-actions&logoColor=white)]()
 
-## What Is CKM?
+A workload orchestration system I built to understand how kernel scheduling, memory management, and production infrastructure come together in real-world systems.
 
-**Cloud Kernel Manager (CKM)** is a cloud-native workload orchestration system that:
+---
 
-- Executes real Docker containers with resource limits
-- Implements OS kernel concepts: scheduling, memory management, process groups
-- Provides production-grade observability with Prometheus & Grafana
-- Demonstrates SRE patterns: circuit breakers, rate limiting, graceful shutdown
+## Background
+
+I'm a final year CS student, and I've always been curious about how things work under the hood. In my OS classes, we learned about scheduling algorithms like FIFO and Round-Robin, but everything felt theoretical. When I was learning cloud computing and cloud environments, I studied containers, metrics, and load balancing, but I never really understood how these pieces connect.
+
+So I decided to build something that bridges both worlds.
+
+CKM started as a simple scheduler simulation, but I kept asking myself: *"How would this actually work in production?"* That question led me down a rabbit hole of learning about:
+
+- How schedulers decide which workload runs next and why it matters for different application types
+- Why metrics like queue depth and execution latency are crucial for understanding system behavior
+- How production systems handle failures gracefully without taking down everything
+- The relationship between OS-level resource limits (cgroups) and container orchestration
+
+The result is this project. Not just a toy simulation, but something that actually runs Docker containers, collects real metrics, and handles workloads like a simplified version of what Kubernetes does internally.
+
+---
+
+## What I Learned
+
+### Scheduling Isn't Just an Algorithm
+
+In textbooks, scheduling is about choosing the "best" algorithm. But in practice, the right scheduler depends on your workload:
+
+- **Interactive apps** like Jupyter notebooks need low latency, so Fair Scheduler works well here
+- **Batch jobs** like ML training and data processing can tolerate waiting, so Priority Scheduler makes sense
+- **Mixed workloads** need multilevel scheduling to avoid starving one type
+
+I implemented all of these and connected them to metrics so I could actually *see* the difference in Grafana. Watching queue depth spike when using the wrong scheduler for a workload type was eye-opening.
+
+### Metrics Tell the Story
+
+Before this project, I thought metrics were just "nice to have." Now I understand they're essential for understanding what's happening inside a system:
+
+- `workload_duration_seconds` tells me if jobs are taking longer than expected
+- `scheduler_queue_length` shows backpressure before it becomes a problem
+- `container_startup_time` helps identify infrastructure issues
+
+These aren't random numbers. Each metric answers a specific question about system behavior.
+
+### Production Systems Are About Failure
+
+The most valuable part of this project was implementing resilience patterns:
+
+- **Circuit Breaker**: I finally understand why Netflix built Hystrix. When one service fails, you need to stop hammering it.
+- **Rate Limiting**: Token bucket algorithm seemed abstract until I implemented it and saw how it smooths out traffic spikes.
+- **Graceful Shutdown**: SIGTERM handling isn't optional in production. Containers get killed, and you need to clean up properly.
 
 ---
 
@@ -60,20 +107,19 @@ flowchart TD
 
 ## Features
 
-| Component | Description |
-|-----------|-------------|
-| **REST API** | Full CRUD for workload management |
-| **Docker Runtime** | Execute real containers with resource limits |
-| **Schedulers** | FIFO, Round-Robin, Fair, Priority, Multilevel |
-| **Memory Manager** | Track and limit memory allocation |
-| **Process Management** | Process groups, sessions, parent-child relationships |
-| **Signal Handling** | Graceful shutdown with SIGTERM/SIGINT |
-| **cgroups-like Limits** | CPU shares and memory limits |
-| **Circuit Breaker** | Prevent cascading failures |
-| **Rate Limiting** | Token bucket algorithm |
-| **Load Balancer** | Round-robin, least-connections, weighted |
-| **Prometheus Metrics** | Comprehensive observability |
-| **Grafana Dashboards** | Visualize workloads, schedulers, resources |
+| Component | What It Does | Why It Matters |
+|-----------|--------------|----------------|
+| **REST API** | CRUD for workloads | Real systems need APIs, not just CLI |
+| **Docker Runtime** | Executes actual containers | Moves beyond simulation to real workloads |
+| **Schedulers** | 5 different algorithms | Different workloads need different strategies |
+| **Memory Manager** | Tracks allocation | Prevents OOM and resource starvation |
+| **Process Management** | Groups, sessions, parent-child | Mirrors how Linux actually manages processes |
+| **cgroups-like Limits** | CPU/memory constraints | Same concepts Docker uses internally |
+| **Circuit Breaker** | Stops cascading failures | Essential for distributed systems |
+| **Rate Limiter** | Controls request flow | Prevents overload during traffic spikes |
+| **Prometheus Metrics** | Observability | Can't fix what you can't measure |
+| **Grafana Dashboards** | Visualization | Makes metrics actionable |
+| **Container Discovery** | Monitors ALL Docker containers | See any app's performance without setup |
 
 ---
 
@@ -83,72 +129,68 @@ flowchart TD
 
 - Go 1.24+
 - Docker
-- Docker Compose (optional)
+- Docker Compose (optional, but makes life easier)
 
 ### Run Locally
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/ckm.git
+git clone https://github.com/enesyesil/ckm.git
 cd ckm
 
-# Install dependencies
 go mod tidy
-
-# Run the server
 go run cmd/kernel_main.go
 ```
 
 ### Run with Docker Compose
 
 ```bash
-# Start all services (CKM, Prometheus, Grafana)
+# Starts CKM, Prometheus, and Grafana
 docker-compose up -d
 
-# View logs
+# Check logs
 docker-compose logs -f ckm
 
-# Access services
+# Access:
 # - API: http://localhost:8080
 # - Prometheus: http://localhost:9091
-# - Grafana: http://localhost:3000 (admin/admin)
+# - Grafana: http://localhost:3001 (admin/admin)
 ```
 
 ---
 
-## API Reference
+## API
 
-### Create Workload
+### Create a Workload
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/workloads \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "my-workload",
+    "id": "my-job",
     "type": "container",
     "memory_mb": 256,
     "image": "alpine:latest",
-    "command": ["echo", "Hello World"],
+    "command": ["echo", "hello world"],
     "priority": 1
   }'
 ```
 
-### List Workloads
+### Check Status
+
+```bash
+curl http://localhost:8080/api/v1/workloads/my-job
+```
+
+### List All
 
 ```bash
 curl http://localhost:8080/api/v1/workloads
 ```
 
-### Get Workload Status
+### Delete
 
 ```bash
-curl http://localhost:8080/api/v1/workloads/my-workload
-```
-
-### Delete Workload
-
-```bash
-curl -X DELETE http://localhost:8080/api/v1/workloads/my-workload
+curl -X DELETE http://localhost:8080/api/v1/workloads/my-job
 ```
 
 ### Health Check
@@ -159,19 +201,62 @@ curl http://localhost:8080/api/v1/health
 
 ---
 
-## Metrics
+## Metrics That Actually Matter
 
-Prometheus metrics are available at `http://localhost:9090/metrics`:
+| Metric | What It Tells You |
+|--------|-------------------|
+| `ckm_workloads_running_total` | Current load on the system |
+| `ckm_workload_duration_seconds` | Are jobs taking longer than expected? |
+| `ckm_workload_failures_total` | Failure rate, broken down by reason |
+| `ckm_scheduler_queue_length` | Backpressure indicator |
+| `ckm_memory_usage_megabytes` | Resource consumption |
+| `ckm_container_startup_time_seconds` | Infrastructure health |
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `ckm_workloads_running_total` | Gauge | Currently running workloads |
-| `ckm_workloads_completed_total` | Counter | Completed workloads by type |
-| `ckm_workload_duration_seconds` | Histogram | Execution duration by type |
-| `ckm_workload_failures_total` | Counter | Failures by type and reason |
-| `ckm_memory_usage_megabytes` | Gauge | Memory usage |
-| `ckm_scheduler_queue_length` | Gauge | Scheduler queue depth |
-| `ckm_container_startup_time_seconds` | Histogram | Container startup latency |
+I set up Grafana dashboards that show these in real-time. It's genuinely useful for understanding system behavior.
+
+---
+
+## Container Discovery: Monitor Any App
+
+One feature I'm proud of: CKM automatically discovers and monitors **all running Docker containers**, not just the ones it creates.
+
+### How It Works
+
+When you start CKM, it scans your Docker daemon every 5 seconds and collects real-time stats for every container:
+
+```bash
+# Start your app normally
+docker run -d -p 3000:3000 my-portfolio:latest
+
+# Start CKM
+./ckm
+
+# Your app is now being monitored automatically
+curl http://localhost:9090/metrics | grep ckm_container_
+```
+
+### What Gets Collected
+
+| Metric | Description |
+|--------|-------------|
+| `ckm_container_cpu_percent` | CPU usage percentage per container |
+| `ckm_container_memory_bytes` | Memory consumption in bytes |
+| `ckm_container_memory_percent` | Memory as percentage of limit |
+| `ckm_container_network_rx_bytes` | Network received bytes |
+| `ckm_container_network_tx_bytes` | Network transmitted bytes |
+| `ckm_container_block_read_bytes` | Disk read bytes |
+| `ckm_container_block_write_bytes` | Disk write bytes |
+| `ckm_container_pids` | Number of processes |
+
+### Why This Matters
+
+If you're a developer or hobbyist who wants to understand how your app performs:
+
+1. You don't need to instrument your code
+2. You don't need to configure anything
+3. Just run your app in Docker, and CKM shows you the metrics in Grafana
+
+I tested this with my personal portfolio website and a project called Fisor Orchestrator. Both showed up automatically in the dashboard with real-time CPU, memory, and network stats.
 
 ---
 
@@ -180,171 +265,97 @@ Prometheus metrics are available at `http://localhost:9090/metrics`:
 ```
 ckm/
 ├── cmd/
-│   └── kernel_main.go       # Main entry point
+│   └── kernel_main.go       # Entry point
 ├── configs/
-│   └── workloads.yaml       # Sample workload config
+│   └── workloads.yaml       # Sample workloads
 ├── deployments/
-│   ├── prometheus.yml       # Prometheus configuration
-│   ├── grafana-dash.json    # Grafana dashboard
-│   └── grafana-*.yml        # Grafana provisioning
+│   ├── prometheus.yml
+│   ├── grafana-dash.json
+│   └── grafana-*.yml
 ├── internal/
-│   ├── api/
-│   │   └── server.go        # REST API server
-│   ├── balancer/
-│   │   └── load_balancer.go # Load balancer
-│   ├── common/
-│   │   ├── config.go        # Configuration loading
-│   │   ├── logger.go        # Structured logging
-│   │   ├── metrics.go       # Prometheus metrics
-│   │   ├── circuit_breaker.go
-│   │   └── rate_limiter.go
-│   ├── kernel/
-│   │   ├── scheduler.go     # Scheduler interface & workload
-│   │   ├── fifo.go          # FIFO scheduler
-│   │   ├── round_robin.go   # Round-robin scheduler
-│   │   ├── fair_scheduler.go
-│   │   ├── priority_scheduler.go
-│   │   ├── multilevel_scheduler.go
-│   │   ├── memory.go        # Memory manager
-│   │   ├── store.go         # Workload store
-│   │   ├── executor.go      # Workload executor
-│   │   ├── process.go       # Process management
-│   │   ├── signals.go       # Signal handling
-│   │   └── cgroups.go       # Resource limits
-│   └── runtime/
-│       └── docker.go        # Docker runtime
-├── Dockerfile               # Multi-stage build
-├── docker-compose.yml       # Local development stack
-├── go.mod
+│   ├── api/                 # REST API
+│   ├── balancer/            # Load balancer
+│   ├── common/              # Logging, metrics, rate limiter, circuit breaker
+│   ├── kernel/              # Schedulers, memory, processes, cgroups
+│   └── runtime/             # Docker integration
+├── Dockerfile
+├── docker-compose.yml
 └── README.md
 ```
 
 ---
 
-## Configuration
+## Scheduler Deep Dive
 
-### Environment Variables
+### FIFO
+First in, first out. Simple, but long jobs block everything behind them.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENV` | `production` | Environment (`development` for colored logs) |
+### Round-Robin
+Time slices for everyone. Fair, but context switching has overhead.
 
-### Workload YAML
+### Fair Scheduler
+Tracks total runtime and prioritizes jobs that have run less. Good for interactive workloads where you don't want one job hogging everything.
 
-```yaml
-- id: "task-001"
-  cpu_time: "2s"
-  memory_mb: 256
-  file_path: "jobs/train.py"
-```
+### Priority Scheduler
+Lower number = higher priority. Useful when some jobs genuinely matter more.
+
+### Multilevel
+Routes different workload types to different schedulers. VMs go to one queue, tasks to another. Prevents different workload patterns from interfering with each other.
+
+---
+
+## SRE Patterns
+
+### Circuit Breaker
+
+When something starts failing, stop hitting it. Three states:
+- **Closed**: Normal operation
+- **Open**: Service is down, fail fast
+- **Half-Open**: Try again after timeout
+
+### Rate Limiter
+
+Token bucket algorithm. Smooths out traffic spikes. Configurable rate and burst capacity.
+
+### Graceful Shutdown
+
+Catches SIGTERM/SIGINT, waits for running workloads, then shuts down cleanly. Important because containers can get killed at any time.
 
 ---
 
 ## Testing
 
-### Run Unit Tests
-
 ```bash
+# Unit tests
 go test ./...
-```
 
-### Run Integration Tests (requires Docker)
-
-```bash
+# Integration tests (needs Docker)
 go test -tags=integration ./...
-```
 
-### Run with Coverage
-
-```bash
+# Coverage
 go test -cover ./...
 ```
 
 ---
 
-## Scheduler Algorithms
+## What's Next
 
-### FIFO (First-In-First-Out)
-Executes workloads in order of arrival. Simple but may cause starvation.
-
-### Round-Robin
-Executes workloads in time slices (quantum). Fair but may have overhead.
-
-### Fair Scheduler
-Prioritizes workloads with least total runtime. Prevents starvation.
-
-### Priority Scheduler
-Executes workloads by priority (lower number = higher priority).
-
-### Multilevel Scheduler
-Routes different workload types to different schedulers (VMs vs tasks).
+Things I want to add when I have time:
+- Kubernetes deployment manifests
+- Horizontal pod autoscaling based on queue depth
+- More sophisticated load balancing (consistent hashing)
+- Distributed tracing with OpenTelemetry
 
 ---
 
-## SRE Patterns Implemented
+## Final Thoughts
 
-### Circuit Breaker
-Prevents cascading failures by stopping requests when a service is failing.
-- States: Closed (normal), Open (failing), Half-Open (testing)
-- Configurable failure threshold and timeout
+This project helped me understand that the gap between "CS theory" and "production systems" is smaller than I thought. The same scheduling concepts from my OS textbook show up in Kubernetes. The same metrics patterns from my distributed systems class are what SREs look at every day.
 
-### Rate Limiter
-Controls request rate using token bucket algorithm.
-- Configurable rate (tokens/second) and capacity
-- Blocks or rejects excess requests
-
-### Graceful Shutdown
-Handles SIGTERM/SIGINT for clean shutdown.
-- Waits for running workloads to complete
-- Shuts down API server gracefully
-
----
-
-## Development
-
-### Add New Scheduler
-
-1. Create `internal/kernel/my_scheduler.go`
-2. Implement `Scheduler` interface:
-
-```go
-type Scheduler interface {
-    Add(Workload)
-    Run()
-}
-```
-
-3. Add to `ChooseScheduler()` in `scheduler.go`
-
-### Add New Metrics
-
-1. Define in `internal/common/metrics.go`
-2. Register in `InitMetrics()`
-3. Update Grafana dashboard
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/my-feature`
-3. Commit changes: `git commit -am 'Add feature'`
-4. Push branch: `git push origin feature/my-feature`
-5. Submit Pull Request
+If you're a student trying to understand how backend systems actually work, I'd recommend building something like this. Start simple, then keep asking "how would this work in production?" That question will teach you more than any textbook.
 
 ---
 
 ## License
 
-MIT License - see LICENSE file for details.
-
----
-
-## Acknowledgments
-
-This project demonstrates concepts from:
-- Operating Systems (scheduling, memory management, process management)
-- Site Reliability Engineering (observability, resilience patterns)
-- Cloud Native (containers, orchestration, metrics)
-
-Built for learning and demonstrating understanding of kernel, OS, load balancing, and SRE concepts.
+MIT

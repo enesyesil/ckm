@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
-	"os/signal"
 	"syscall"
 	"time"
 
@@ -25,21 +23,27 @@ func main() {
 	logger.Info("Metrics server started on :9090")
 
 	// Create components
-	memory := kernel.NewMemoryManager(1024)
+	cgroups := kernel.NewCGroupManager(1024) // 1024 MB total memory
 	store := kernel.NewWorkloadStore()
 	scheduler := kernel.NewRoundRobinScheduler(1 * time.Second)
 
-	// Initialize Docker runtime
-	dockerRuntime, err := runtime.NewDockerRuntime(logger)
+	// Initialize shared Docker client
+	dockerClient, err := runtime.NewDockerClient()
 	if err != nil {
-		logger.Fatal("Failed to initialize Docker runtime", zap.Error(err))
+		logger.Fatal("Failed to initialize Docker client", zap.Error(err))
 	}
+
+	// Initialize Docker runtime using shared client
+	dockerRuntime := runtime.NewDockerRuntime(dockerClient, logger)
 
 	// Create executor with worker pool (max 10 concurrent workloads)
 	executor := kernel.NewExecutor(dockerRuntime, store, logger, 10)
 
+	// Start container discovery service using shared client (monitors ALL running containers)
+	discovery := runtime.NewContainerDiscovery(dockerClient, logger, 5*time.Second)
+
 	// Create API server
-	server := api.NewServer(store, executor, scheduler, memory, logger)
+	server := api.NewServer(store, executor, scheduler, cgroups, logger)
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,6 +59,10 @@ func main() {
 		cancel()
 	})
 	sigHandler.Start(ctx)
+
+	// Start container discovery in background
+	go discovery.Start(ctx)
+	logger.Info("Container discovery started (monitoring all Docker containers)")
 
 	// Start API server in goroutine
 	serverErr := make(chan error, 1)

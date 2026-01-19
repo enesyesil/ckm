@@ -26,16 +26,17 @@ func TestIntegrationWorkloadLifecycle(t *testing.T) {
 	common.InitMetrics()
 
 	store := kernel.NewWorkloadStore()
-	memory := kernel.NewMemoryManager(1024)
+	cgroups := kernel.NewCGroupManager(1024)
 	scheduler := kernel.NewRoundRobinScheduler(time.Second)
 
-	dockerRuntime, err := runtime.NewDockerRuntime(logger)
+	dockerClient, err := runtime.NewDockerClient()
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
+	dockerRuntime := runtime.NewDockerRuntime(dockerClient, logger)
 
 	executor := kernel.NewExecutor(dockerRuntime, store, logger, 5)
-	server := NewServer(store, executor, scheduler, memory, logger)
+	server := NewServer(store, executor, scheduler, cgroups, logger)
 
 	// Start server in background
 	go server.Start(":18080")
@@ -84,16 +85,17 @@ func TestIntegrationWorkloadLifecycle(t *testing.T) {
 func TestIntegrationHealthCheck(t *testing.T) {
 	logger := zap.NewNop()
 	store := kernel.NewWorkloadStore()
-	memory := kernel.NewMemoryManager(1024)
+	cgroups := kernel.NewCGroupManager(1024)
 	scheduler := kernel.NewRoundRobinScheduler(time.Second)
 
-	dockerRuntime, err := runtime.NewDockerRuntime(logger)
+	dockerClient, err := runtime.NewDockerClient()
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
+	dockerRuntime := runtime.NewDockerRuntime(dockerClient, logger)
 
 	executor := kernel.NewExecutor(dockerRuntime, store, logger, 5)
-	server := NewServer(store, executor, scheduler, memory, logger)
+	server := NewServer(store, executor, scheduler, cgroups, logger)
 
 	// Start server in background
 	go server.Start(":18081")

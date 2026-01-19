@@ -43,7 +43,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - ./deployments/grafana-dash.json:/etc/grafana/provisioning/dashboards/ckm.json:ro
       - ./deployments/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro

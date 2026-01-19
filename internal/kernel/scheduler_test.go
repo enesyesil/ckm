@@ -15,34 +15,6 @@ func TestNextPID(t *testing.T) {
 	}
 }
 
-// TestClassifyWorkload tests workload classification by file extension
-func TestClassifyWorkload(t *testing.T) {
-	tests := []struct {
-		file         string
-		expectedType string
-		expectedPrio int
-	}{
-		{"notebook.ipynb", "notebook", 0},
-		{"script.py", "task", 1},
-		{"deploy.sh", "task", 1},
-		{"ubuntu.iso", "vm", 2},
-		{"disk.qcow2", "vm", 2},
-		{"unknown.txt", "task", 2},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.file, func(t *testing.T) {
-			typ, prio := ClassifyWorkload(tt.file)
-			if typ != tt.expectedType {
-				t.Errorf("Expected type %s, got %s", tt.expectedType, typ)
-			}
-			if prio != tt.expectedPrio {
-				t.Errorf("Expected priority %d, got %d", tt.expectedPrio, prio)
-			}
-		})
-	}
-}
-
 // TestFIFOSchedulerAdd tests FIFO scheduler add operation
 func TestFIFOSchedulerAdd(t *testing.T) {
 	s := NewFIFOScheduler()

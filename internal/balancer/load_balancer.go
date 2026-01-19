@@ -9,6 +9,7 @@ type Node struct {
 	ID          string
 	Address     string
 	Healthy     bool
+	Weight      int // Node weight for weighted selection (higher = more traffic)
 	Connections int // Current connections
 	mu          sync.RWMutex
 }
@@ -89,10 +90,36 @@ func (lb *LoadBalancer) selectLeastConnections(nodes []*Node) *Node {
 	return best
 }
 
-// selectWeighted selects node based on weight (simplified - uses connections as inverse weight)
+// selectWeighted selects node based on weight (higher weight = more likely to be selected)
 func (lb *LoadBalancer) selectWeighted(nodes []*Node) *Node {
-	// Simple weighted: prefer nodes with fewer connections
-	return lb.selectLeastConnections(nodes)
+	// Calculate total weight
+	totalWeight := 0
+	for _, node := range nodes {
+		weight := node.Weight
+		if weight <= 0 {
+			weight = 1 // Default weight
+		}
+		totalWeight += weight
+	}
+
+	// Use nextIndex as a simple counter to distribute based on weight
+	lb.nextIndex++
+	position := lb.nextIndex % totalWeight
+
+	// Find the node at this position
+	cumulative := 0
+	for _, node := range nodes {
+		weight := node.Weight
+		if weight <= 0 {
+			weight = 1
+		}
+		cumulative += weight
+		if position < cumulative {
+			return node
+		}
+	}
+
+	return nodes[0] // Fallback
 }
 
 // MarkHealthy marks a node as healthy

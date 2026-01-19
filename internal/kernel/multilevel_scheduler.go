@@ -19,17 +19,15 @@ func NewMultilevelScheduler(vmSched Scheduler, taskSched Scheduler) *MultilevelS
 // Add routes workload to appropriate queue based on type
 func (m *MultilevelScheduler) Add(w Workload) {
 	if w.Type == "vm" {
+		fmt.Printf("[Multilevel] Routing %s to VM queue\n", w.ID)
 		m.vmQueue.Add(w)
 	} else {
+		fmt.Printf("[Multilevel] Routing %s to task queue\n", w.ID)
 		m.taskQueue.Add(w)
 	}
 }
 
-// Run executes workloads from both queues (legacy mode)
+// Run is a no-op; actual execution happens via Executor
 func (m *MultilevelScheduler) Run() {
-	fmt.Println("[>>] Starting Multilevel Scheduler...")
-	// Run task queue first, then VM queue
-	m.taskQueue.Run()
-	m.vmQueue.Run()
-	fmt.Println("[✓] Multilevel Scheduler complete")
+	// Workloads are executed asynchronously by the Executor
 }

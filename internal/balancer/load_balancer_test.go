@@ -106,3 +106,24 @@ func TestLoadBalancerMarkUnhealthy(t *testing.T) {
 		t.Error("Expected nil after marking unhealthy")
 	}
 }
+
+// TestLoadBalancerWeighted tests weighted selection
+func TestLoadBalancerWeighted(t *testing.T) {
+	lb := NewLoadBalancer("weighted")
+
+	// Node-1 has weight 3, node-2 has weight 1
+	// Node-1 should be selected ~75% of the time
+	lb.AddNode(&Node{ID: "node-1", Address: "localhost:8080", Healthy: true, Weight: 3})
+	lb.AddNode(&Node{ID: "node-2", Address: "localhost:8081", Healthy: true, Weight: 1})
+
+	counts := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		node := lb.SelectNode()
+		counts[node.ID]++
+	}
+
+	// Node-1 should be selected more often (around 75 times)
+	if counts["node-1"] < 50 {
+		t.Errorf("Expected node-1 to be selected more often, got %d", counts["node-1"])
+	}
+}
