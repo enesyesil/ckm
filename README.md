@@ -9,8 +9,6 @@
 
 A workload orchestration system I built to understand how kernel scheduling, memory management, and production infrastructure come together in real-world systems.
 
-**Tech Stack:** Go 1.24+ | Docker SDK | Gorilla Mux | Prometheus | Zap Logging | Grafana
-
 ---
 
 ## Background
